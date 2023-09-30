@@ -14,7 +14,6 @@ module fun
    logical(c_bool) wc, fok, lensm, btod, iatoi, inher
    character(len=6) path
 
-
    integer(c_int) breaknum(3)
    real(c_double) phitmp0(3), phitmp1(3)
    complex(c_double_complex) fc, fcomp(3)
@@ -22,7 +21,7 @@ module fun
    integer(c_int), allocatable, target :: idxre(:, :), idxim(:, :), iwork(:), idxp(:, :)
    complex(c_double_complex), allocatable, target :: u(:), mean(:)
    real(c_double), allocatable, target :: tax(:), zax(:), eta(:, :), etag(:, :), w(:, :), f(:, :), p(:, :), &
-                                          phi(:, :), phios(:, :), wos(:, :), &                                          
+                                          phi(:, :), phios(:, :), wos(:, :), &
                                           cl1(:), lhs1(:), rhs1(:), cl2(:), lhs2(:), rhs2(:)
 
    include 'z.inc'
@@ -133,7 +132,7 @@ contains
       betta_z = betta/dsqrt(pitch*pitch + 1.0d0)
       betta_z2 = betta2/(pitch*pitch + 1.0d0)
       betta_perp2 = betta2 - betta_z2
-      gmp = 0.048715056967419
+      !gmp = 0.048715056967419
       w_op_w = 2*pi*w_op*1e9
       c = 29979245800.0d0
       e = 4.803e-10
@@ -339,7 +338,7 @@ contains
       integer(c_int) err_dealloc
 
       deallocate (f, p, u, tax, zax, mean, eta, etag, w, &
-                idxre, idxim, wos, phi, phios, idxp,cl1, lhs1, rhs1, cl2, lhs2, rhs2, stat=err_dealloc)
+                  idxre, idxim, wos, phi, phios, idxp, cl1, lhs1, rhs1, cl2, lhs2, rhs2, stat=err_dealloc)
 
       if (err_dealloc /= 0) then
          print *, "deallocation error"
@@ -356,7 +355,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtr1, dtr2
+         dtr1, dtr2, gmp
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtr1, dtr2
       character(*) path
@@ -400,7 +399,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtrb, dtrh, inher
+         dtrb, dtrh, inher, gmp
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtrh
 
@@ -572,13 +571,13 @@ contains
 
       open (3, file=path//'WS.dat')
       do i = 1, nt
-         write (3, '(4f14.6)') tax(i), w(1, i), w(2, i), w(3, i)
+         write (3, '(4f14.6)') tax(i), wos(1, i), wos(2, i), wos(3, i)
       end do
       close (3)
 
       open (3, file=path//'W.dat')
       do i = 1, nt
-         write (3, '(4f14.6)') tax(i), w_monitr(1, i), w_monitr(2, i), w_monitr(3, i)
+         write (3, '(4f14.6)') tax(i), w(1, i), w(2, i), w(3, i)
       end do
       close (3)
 
@@ -632,7 +631,7 @@ contains
          do i = 1, nz - 1
             !zwant = i*dz
             zwant = zax(i + 1)
-            call d02pcf(dpdz, zwant, zgot, pgot, ppgot, pmax, workp, ifailp)
+            call d02pcf(dpdz_nag, zwant, zgot, pgot, ppgot, pmax, workp, ifailp)
 
             if (ifailp .ne. 0) then
                write (*, *)
@@ -644,39 +643,16 @@ contains
             p(:, i + 1) = pgot
          end do
       else
-         call d02pcf(dpdz, zex_w, zgot, pex, ppgot, pmax, workp, ifailp)
+         call d02pcf(dpdz_nag, zex_w, zgot, pex, ppgot, pmax, workp, ifailp)
       end if
 99998 format(1x, a, i2, a, d12.5)
    end subroutine solvep_nag
 
-   subroutine ode4f()
-      import
-      implicit none
-
-      external d02nbz, d02nby
-
-      integer(c_int) i, j      
-      logical(4) pressed
-      character(1) key
-      integer(c_int), parameter :: esc = 27      
-
-      fp(1) = f(1, 1)*cdexp(ic*f(2, 1))
-      fp(2) = f(3, 1)*cdexp(ic*f(4, 1))
-
-      !solve eq. at t=0
-      call solvep_nag(p(:, 1), p, 'p')
-
-      eta(:, 1) = eff(p(:, nz))
-      etag(:, 1) = pitch**2/(pitch**2 + 1.0d0)*eta(:, 1)
-   
-      call solvef_nag()
-   end subroutine ode4f
-
-   subroutine solvef_nag()     
+   subroutine solvef_nag()
       call d02nvf(neqmax, ny2dim, maxord, 'default', petzld, const, tcrit, hmin, hmax, &
                   h0, maxstp, mxhnil, 'default', rwork, ifailf)
       call d02nsf(neq, neqmax, 'a', nwkjac, rwork, ifailf)
-      
+
       t = 0.0d0
       tout = tend
       itask = 1
@@ -692,11 +668,11 @@ contains
       xout = dt
       it = 2
       ifailf = 1
-      
+
       !print *, t, tout, itask, rtol(1), atol(1), const, tcrit, y, itraice, xout, it, ifail
       !stop
 
-      call d02nbf(neq, neqmax, t, tout, y, ydot, rwork, rtol, atol, itol, inform, dfdt, ysave, &
+      call d02nbf(neq, neqmax, t, tout, y, ydot, rwork, rtol, atol, itol, inform, dfdt_nag, ysave, &
                   ny2dim, jac, wkjac, nwkjac, monitr, itask, itrace, ifailf)
 
       if (ifailf .ne. 0) then
@@ -707,6 +683,23 @@ contains
       end if
 99998 format(1x, a, i2, a, d12.5)
    end subroutine solvef_nag
+
+   subroutine ode4f()
+      !import, only:fp, f, ic, p, eta, etag, nz, pitch
+      implicit none
+
+      fp(1) = f(1, 1)*cdexp(ic*f(2, 1))
+      fp(2) = f(3, 1)*cdexp(ic*f(4, 1))
+
+      !solve eq. at t=0
+      call solvep_nag(p(:, 1), p, 'p')
+
+      eta(:, 1) = eff(p(:, nz))
+      etag(:, 1) = pitch**2/(pitch**2 + 1.0d0)*eta(:, 1)
+
+      !time solver
+      call solvef_nag()
+   end subroutine ode4f
 
    function eff(pex) result(eta)
       use, intrinsic :: iso_c_binding, only: c_double, c_int
@@ -723,7 +716,7 @@ contains
       end do
    end function eff
 
-   subroutine dpdz(z, p, prhs)
+   subroutine dpdz_common(z, p, prhs)
       import :: ne, zex_w, f, ic, dtr
       implicit none
 
@@ -747,7 +740,14 @@ contains
          prhs(idxre(i, :)) = dreal(s)
          prhs(idxim(i, :)) = dimag(s)
       end do
-   end subroutine dpdz
+   end subroutine dpdz_common
+
+   subroutine dpdz_nag(z, p, prhs)
+      implicit none
+
+      real(c_double) z, p(*), prhs(*)
+      call dpdz_common(z, p, prhs)
+   end subroutine dpdz_nag
 
    complex(c_double_complex) function xi(p, num)
       use, intrinsic :: iso_c_binding, only: c_int, c_double, c_double_complex
@@ -768,10 +768,25 @@ contains
 
    end function
 
-   subroutine dfdt(neqf, t, f, s, ires) ! nag
+   subroutine dfdt_nag(neqf, t, f, s, ires)
       implicit none
 
-      integer(c_int) :: ii, jj, iter_num = 1, time_num = 1, neqf, ires
+      integer(c_int) neqf, ires
+      real(c_double) t, f(neqf), s(neqf)
+      
+      fp(1) = f(1)*cdexp(ic*f(2))
+      fp(2) = f(3)*cdexp(ic*f(4))
+
+      call solvep_nag(p(:, 1), p, 'p')
+
+      call dfdt_common(neqf, t, f, s)
+
+   end subroutine dfdt_nag
+
+   subroutine dfdt_common(neqf, t, f, s)
+      implicit none
+
+      integer(c_int) :: ii, jj, iter_num = 1, time_num = 1, neqf
       real(c_double) t, f(neqf), s(neqf), &
          x1r, x1i, q31, i1, r1, th1, dcir1, cos1, sin1, &
          x2r, x2i, q32, i2, r2, th2, dcir2, cos2, sin2, q3, &
@@ -779,10 +794,10 @@ contains
       complex(c_double_complex) x1, x2
       logical bp
 
-      fp(1) = f(1)*cdexp(ic*f(2))
-      fp(2) = f(3)*cdexp(ic*f(4))
-
-      call solvep_nag(p(:, 1), p, 'p')
+      !fp(1) = f(1)*cdexp(ic*f(2))
+      !fp(2) = f(3)*cdexp(ic*f(4))
+      !
+      !call solvep_nag(p(:, 1), p, 'p')
 
       x1 = xi(p, 1)
       x2 = xi(p, 2)
@@ -828,7 +843,7 @@ contains
       s(5) = -f3 + a1*f1*dcos(phi1 - phi3) + a2*f2*dcos(phi2 - phi3)
       s(6) = a1*f1/f3*dsin(phi1 - phi3) + a2*f2/f3*dsin(phi2 - phi3)
 
-   end subroutine dfdt
+   end subroutine dfdt_common
 
    subroutine calc_u(u, zex_w, nz, zax)
       import
@@ -1061,6 +1076,7 @@ contains
          end do
          do j = 1, 3
             w_monitr(j, it) = ydot(2*j)
+            w(j, it) = w_monitr(j, it)
          end do
          xout = xout + dt
          nt = it
