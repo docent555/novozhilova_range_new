@@ -10,15 +10,18 @@ module DOPRP
    private allocate_arrays, deallocate_arrays
 
 contains
-   subroutine DOPRP_init(ne)
+   subroutine DOPRP_init(ne, ptoll)
       implicit none
 
       integer(c_int), intent(in) :: ne
+      real(c_double), intent(in) :: ptoll
 
       neqp = 4*ne
       nrdp = 4*ne
       lworkp = 8*neqp + 5*nrdp + 21
       liworkp = nrdp + 21
+      
+      ptol = ptoll
 
       call allocate_arrays()
    end subroutine DOPRP_init

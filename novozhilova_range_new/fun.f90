@@ -2,8 +2,6 @@ module fun
    use, intrinsic :: iso_c_binding
    use ifcore
    use ifport
-   !use D02PVF_D02PCF_D02PDF
-   !use D02NVF_D02M_N
 
    integer(c_int) ne, neqp, neqf, nt, nz, freq_out, l, inharm, ndtr
    real(c_double) zex_w, zex, dz, tend, dtr(2), q(3), icu(2), th(2), a(2), dcir(2), r(2), &
@@ -11,7 +9,7 @@ module fun
       gamma, ukv, betta, betta2, betta_z, betta_z2, betta_perp, betta_perp2, gmp, w_op_w, w_op, c, e, m, b(2), w_n(2), ia(2), norm, nfac, &
       dtrb(2), dtrh_w, dtr0
    complex(c_double_complex) fp(2)
-   logical(c_bool) wc, fok, lensm, btod, iatoi, inher
+   logical(c_bool) wc, fok, lensm, btod, iatoi, inher, DP5
    character(len=6) path
 
    integer(c_int) breaknum(3)
@@ -35,17 +33,20 @@ module fun
 
 contains
    subroutine init()
-      use D02PVF_D02PCF_D02PDF, only:D02PVF_D02PCF_D02PDF_init
-      use D02NVF_D02M_N, only:D02NVF_D02M_N_init
+      use D02PVF_D02PCF_D02PDF, only: D02PVF_D02PCF_D02PDF_init
+      use D02NVF_D02M_N, only: D02NVF_D02M_N_init
+      use DOPRF, only: DOPRF_init
+      use DOPRP, only: DOPRP_init
+
       implicit none
 
       integer(c_int) ii
 
       call read_param()
-      
+
       neqp = 4*ne
       neqf = 6
-      
+
       call svch_params()
 
       if (lensm .eq. .true.) zex_w = betta_perp2/2.0d0/betta_z*w_op_w*zex/nharm/c
@@ -73,16 +74,21 @@ contains
       nt = tend/dt + 1
       nz = zex_w/dz + 1
 
-      call D02PVF_D02PCF_D02PDF_init(ne)
+      if (DP5 .eq. .true.) then
+         call DOPRP_init(ne, ptol)
+         call DOPRF_init(ne, ftol)
+      else
+         call D02PVF_D02PCF_D02PDF_init(ne)
 
-      f0(1) = f10
-      f0(2) = p10
-      f0(3) = f20
-      f0(4) = p20
-      f0(5) = f30
-      f0(6) = p30
+         f0(1) = f10
+         f0(2) = p10
+         f0(3) = f20
+         f0(4) = p20
+         f0(5) = f30
+         f0(6) = p30
 
-      call D02NVF_D02M_N_init(6, nt, dt, tend, ftol, f0)
+         call D02NVF_D02M_N_init(6, nt, dt, tend, ftol, f0)
+      end if
 
       call allocate_arrays()
 
@@ -363,7 +369,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtr1, dtr2, gmp
+         dtr1, dtr2, gmp, DP5
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtr1, dtr2
       character(*) path
@@ -407,7 +413,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtrb, dtrh, inher, gmp
+         dtrb, dtrh, inher, gmp, DP5
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtrh
 
@@ -623,10 +629,11 @@ contains
       stop
    end subroutine write_results
 
-   subroutine init_dopr_p()   
-      use DOPRP, only:rparp, iparp, itolp, rtolp, atolp, iworkp, workp, ptol, &
-         artolp, aatolp, arparp, aiparp
+   subroutine init_dopr_p()
+      use DOPRP, only: rparp, iparp, itolp, rtolp, atolp, iworkp, workp, ptol, &
+                       artolp, aatolp, arparp, aiparp
       import, only:nz, dz
+
       implicit none
 
       rparp = 0.0
@@ -643,23 +650,99 @@ contains
       aiparp(1) = iparp
    end subroutine init_dopr_p
 
+   subroutine solvef_dopr()
+      use, intrinsic :: iso_c_binding
+      use DOPRF, only: yf, ioutf, aatolf, arparf, itolf, workf, lworkf, liworkf, aiparf, ididf, artolf, iworkf
+      implicit none
+
+      real(c_double) rparf, t, xoutf, rtolf, atolf
+      integer(c_int) iparf, itf, j
+
+      real(c_double) pex(neqp)
+
+      common/internf/xoutf, itf
+
+      rparf = 0.0
+      iparf = 0
+      t = tax(1)
+      xoutf = t
+      itf = 0
+      yf = f(:, 1)
+      itolf = 0
+      rtolf = ftol
+      atolf = rtolf
+      ioutf = 6
+
+      artolf(1) = rtolf
+      aatolf(1) = atolf
+      arparf(1) = rparf
+      aiparf(1) = iparf
+
+      iworkf(:) = 0
+      workf(:) = 0.0d0
+
+      iworkf(5) = 6
+
+      call dopri5_f(6, dfdt_dopr, t, yf, tend, artolf, aatolf, itolf, soloutf, ioutf, &
+                    workf, lworkf, iworkf, liworkf, arparf, aiparf, ididf)
+
+      do j = 1, neqf
+         f(j, nt) = yf(j)
+      end do
+
+      call calcpex(f(:, nt), pex, cl1(nt), lhs1(nt), rhs1(nt), cl2(nt), lhs2(nt), rhs2(nt))
+      eta(:, nt) = eff(pex)
+      !eta(:, nt) = eff(p(:, nz))
+      etag(:, nt) = pitch**2/(pitch**2 + 1)*eta(:, nt)
+   end subroutine solvef_dopr
+
    subroutine solvep_dopr(pin, pex, c)
-      use DOPRP, only:yp, iworkp
+      use DOPRP, only: yp, iworkp, ioutp, artolp, aatolp, arparp, itolp, workp, lworkp, liworkp, aiparp, ididp
+
+      implicit none
+
+      real(c_double), intent(in) :: pin(:)
+      real(c_double), intent(inout) :: pex(:, :)
+      character(c_char), intent(in) :: c
+
+      integer(c_int) itp
+      real(c_double) z, xoutp
+      common/internp/xoutp, itp
 
       call init_dopr_p()
 
-      ioutp = 2
-      z = zax(1)
-      xoutp = z
-      itp = 0
-      yp = p(:, 1)
-      iworkp(5) = neqp
+      if (c .eq. 'p') then
+         ioutp = 2
+         z = zax(1)
+         xoutp = z
+         itp = 0
+         yp = pin
+         iworkp(5) = neqp
+
+         call dopri5_p(neqp, dpdz_dopr, z, yp, zex_w, artolp, aatolp, itolp, soloutp, ioutp, &
+                       workp, lworkp, iworkp, liworkp, arparp, aiparp, ididp)
+
+         pex(:, nz) = yp(:)
+
+      else
+         ioutp = 0
+         z = zax(1)
+         xoutp = z
+         itp = 0
+         yp = pin
+         iworkp(5) = 0
+
+         call dopri5_p(neqp, dpdz_dopr, z, yp, zex_w, artolp, aatolp, itolp, solout_fiction, 0, &
+                       workp, lworkp, iworkp, liworkp, arparp, aiparp, ididp)
+
+         pex(:, 1) = yp(:)
+      end if
 
    end subroutine solvep_dopr
 
    subroutine solvep_nag(pin, pex, c)
-      use D02PVF_D02PCF_D02PDF, only:zstart, thres, method, errass, hstart, workp, lenwrk, ifailp, pgot, ppgot, pmax
-   
+      use D02PVF_D02PCF_D02PDF, only: zstart, thres, method, errass, hstart, workp, lenwrk, ifailp, pgot, ppgot, pmax
+
       implicit none
 
       real(c_double), intent(in) :: pin(:)
@@ -694,10 +777,10 @@ contains
 
    subroutine solvef_nag()
       use D02NVF_D02M_N, only:rtol, neqmax, ny2dim, maxord, petzld, const, tcrit, hmin, hmax, h0, maxstp, mxhnil, nwkjac, rwork, ifailf, neq, &
-         t, tout, itask, itol, atol, y, itrace, xout, it, ydot, inform, ysave, wkjac, nwkjac, w_monitr
-      
+                               t, tout, itask, itol, atol, y, itrace, xout, it, ydot, inform, ysave, wkjac, nwkjac, w_monitr
+
       implicit none
-   
+
       call d02nvf(neqmax, ny2dim, maxord, 'default', petzld, const, tcrit, hmin, hmax, &
                   h0, maxstp, mxhnil, 'default', rwork, ifailf)
       call d02nsf(neq, neqmax, 'a', nwkjac, rwork, ifailf)
@@ -741,13 +824,21 @@ contains
       fp(2) = f(3, 1)*cdexp(ic*f(4, 1))
 
       !solve eq. at t=0
-      call solvep_nag(p(:, 1), p, 'p')
+      if (DP5 .eq. .true.) then
+         call solvep_dopr(p(:, 1), p, 'p')
+      else
+         call solvep_nag(p(:, 1), p, 'p')
+      end if
 
       eta(:, 1) = eff(p(:, nz))
       etag(:, 1) = pitch**2/(pitch**2 + 1.0d0)*eta(:, 1)
 
       !time solver
-      call solvef_nag()
+      if (DP5 .eq. .true.) then
+         call solvef_dopr()
+      else
+         call solvef_nag()
+      end if
    end subroutine ode4f
 
    function eff(pex) result(eta)
@@ -791,10 +882,23 @@ contains
       end do
    end subroutine dpdz_common
 
+   subroutine dpdz_dopr(neqp, z, p, prhs, rparp, iparp)
+      use, intrinsic :: iso_c_binding, only: c_int, c_double, c_double_complex
+
+      implicit none
+
+      real(c_double) z, p(*), prhs(*)
+      integer(c_int) neqp, iparp
+      real(c_double) rparp
+
+      call dpdz_common(z, p, prhs)
+   end subroutine dpdz_dopr
+
    subroutine dpdz_nag(z, p, prhs)
       implicit none
 
       real(c_double) z, p(*), prhs(*)
+
       call dpdz_common(z, p, prhs)
    end subroutine dpdz_nag
 
@@ -832,6 +936,20 @@ contains
 
    end subroutine dfdt_nag
 
+   subroutine dfdt_dopr(neqf, t, f, s, rparf, iparf)
+      implicit none
+      integer(c_int) :: neqf, iparf, itp
+      real(c_double) t, f(neqf), s(neqf), rparf
+
+      fp(1) = f(1)*cdexp(ic*f(2))
+      fp(2) = f(3)*cdexp(ic*f(4))
+
+      call solvep_dopr(p(:, 1), p, 'p')
+
+      call dfdt_common(neqf, t, f, s)
+
+   end subroutine dfdt_dopr
+
    subroutine dfdt_common(neqf, t, f, s)
       implicit none
 
@@ -842,11 +960,6 @@ contains
          f1, f2, f3, phi1, phi2, phi3, a1, a2, zwant, zgot, e1, e2
       complex(c_double_complex) x1, x2
       logical bp
-
-      !fp(1) = f(1)*cdexp(ic*f(2))
-      !fp(2) = f(3)*cdexp(ic*f(4))
-      !
-      !call solvep_nag(p(:, 1), p, 'p')
 
       x1 = xi(p, 1)
       x2 = xi(p, 2)
@@ -1077,7 +1190,7 @@ contains
    end
 
    subroutine monitr(n, nmax, t, hlast, h, y, ydot, ysave, r, acor, imon, inln, hmin, hmxi, nqu)
-      use D02NVF_D02M_N, only:w_monitr
+      use D02NVF_D02M_N, only: w_monitr
       implicit none
       !..parameters..
       integer nout, it, j
@@ -1166,7 +1279,11 @@ contains
       fp(1) = fpex(1)*cdexp(ic*fpex(2))
       fp(2) = fpex(3)*cdexp(ic*fpex(4))
 
-      call solvep_nag(p(:, 1), pex, 'a')
+      if (DP5 .eq. .true.) then
+         call solvep_dopr(p(:, 1), pex, 'a')
+      else
+         call solvep_nag(p(:, 1), pex, 'a')
+      end if
 
       do i = 1, 2
          idx = idxp(i, :)
@@ -1204,7 +1321,11 @@ contains
          fp(1) = f(1, ii)*exp(ic*f(2, ii))
          fp(2) = f(3, ii)*exp(ic*f(4, ii))
 
-         call solvep_nag(p(:, 1), p, 'p')
+         if (DP5 .eq. .true.) then
+            call solvep_dopr(p(:, 1), p, 'p')
+         else
+            call solvep_nag(p(:, 1), p, 'p')
+         end if
 
          !x1 = xi(p(1:2*ne, :), 1)
          !x2 = xi(p(2*ne + 1:4*ne, :), 1)
@@ -1253,6 +1374,117 @@ contains
          w(3, ii) = a1*f1/f3*dsin(phi1 - phi3) + a2*f2/f3*dsin(phi2 - phi3)
       end do
    end subroutine freq
+
+   subroutine solout_fiction
+   end subroutine solout_fiction
+
+   subroutine soloutp(nr, xold, x, y, n, con, icomp, nd, rparp, iparp, irtrn)
+      implicit none
+
+      interface
+         function contd5_p(ii, x, con, icomp, nd)
+            implicit double precision(a - h, o - z)
+            dimension con(5*nd), icomp(nd)
+         end
+      end interface
+
+      integer(c_int) nr, n, nd, icomp(nd), iparp, irtrn, j, itp
+      real(c_double) xold, x, con(5*nd), rparp, y(neqp), xoutp
+      logical(4) pressed
+      character(1) key
+      integer(c_int), parameter :: esc = 27
+      common/internp/xoutp, itp
+
+      if (nr .eq. 1) then
+         itp = 1
+         do j = 1, neqp
+            p(j, itp) = y(j)
+         end do
+         xoutp = x + dz
+      else
+10       continue
+         if (x .ge. xoutp) then
+            itp = itp + 1
+            do j = 1, neqp
+               p(j, itp) = contd5_p(j, xoutp, con, icomp, nd)
+            end do
+            xoutp = xoutp + dz
+            goto 10
+         end if
+      end if
+      return
+   end subroutine soloutp
+
+   subroutine soloutf(nr, xold, x, y, n, con, icomp, nd, rparf, iparf, irtrn)
+      implicit none
+
+      interface
+         function contd5_f(ii, x, con, icomp, nd)
+            implicit double precision(a - h, o - z)
+            dimension con(5*nd), icomp(nd)
+         end
+      end interface
+
+      integer(c_int) nr, n, nd, icomp(nd), iparf, irtrn, j, itf
+      real(c_double) xold, x, con(5*nd), rparf, y(neqf), xoutf, pex(neqp), yy(neqf)
+      logical(4) pressed
+      character(1) key
+      integer(c_int), parameter :: esc = 27
+      common/internf/xoutf, itf
+
+      if (nr .eq. 1) then
+         itf = 1
+         do j = 1, neqf
+            f(j, itf) = y(j)
+         end do
+         call calcpex(y, pex, cl1(itf), lhs1(itf), rhs1(itf), cl2(itf), lhs2(itf), rhs2(itf))
+         eta(:, itf) = eff(pex)
+         !eta(:, itf) = eff(p(:, nz))
+         etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)
+         !write (*, '(a,f10.5,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f6.3,a,f6.3,\,a,a)') 'Time = ', xoutf, &
+         write (*, '(a,f8.3,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f9.5,a,f9.5,a,f9.5,a,f5.3,a,f5.3,a,\,a)') 't =', xoutf, &
+            '  |F1| = ', abs(f(1, itf)), '  |F2| = ', abs(f(3, itf)), &
+            '  |F3| = ', abs(f(5, itf)), '  Eff1 = ', eta(1, itf), '  Eff2 = ', eta(2, itf), &
+            '  ph1 = ', f(2, itf), '  ph2 = ', f(4, itf), '  ph3 = ', f(6, itf), &
+            '  c1 = ', abs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', abs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
+         xoutf = x + dt
+      else
+10       continue
+         if (x .ge. xoutf) then
+            itf = itf + 1
+            do j = 1, neqf
+               f(j, itf) = contd5_f(j, xoutf, con, icomp, nd)
+            end do
+            call calcpex(y, pex, cl1(itf), lhs1(itf), rhs1(itf), cl2(itf), lhs2(itf), rhs2(itf))
+            eta(:, itf) = eff(pex)
+            !eta(:, itf) = eff(p(:, nz))
+            etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)
+            !write (*, '(a,f10.5,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f6.3,a,f6.3,\,a,a)') 'Time = ', xoutf, &
+            write (*, '(a,f8.3,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f9.5,a,f9.5,a,f9.5,a,f5.3,a,f5.3,a,\,a)') 't =', xoutf, &
+               '  |F1| = ', abs(f(1, itf)), '  |F2| = ', abs(f(3, itf)), &
+               '  |F3| = ', abs(f(5, itf)), '  Eff1 = ', eta(1, itf), '  Eff2 = ', eta(2, itf), &
+               '  ph1 = ', f(2, itf), '  ph2 = ', f(4, itf), '  ph3 = ', f(6, itf), &
+               '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', dabs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
+            xoutf = xoutf + dt
+            goto 10
+         end if
+      end if
+
+      pressed = peekcharqq()
+      if (pressed) then
+         key = getcharqq()
+         if (ichar(key) .eq. esc) then
+            write (*, '(/,a)') 'Quit?'
+            key = getcharqq()
+            if (ichar(key) .eq. 121 .or. ichar(key) .eq. 89) then
+               nt = itf
+               irtrn = -1
+               !return
+            end if
+         end if
+      end if
+      return
+   end subroutine soloutf
 
    !   subroutine zs(f, pex, c1, lhs1, rhs1, c2, lhs2, rhs2)
 !

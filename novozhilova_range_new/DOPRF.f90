@@ -1,29 +1,36 @@
 module DOPRF
    use, intrinsic :: iso_c_binding
 
-   integer(c_int) neqf, nrdf, lworkf, liworkf
+   integer(c_int) neqf, nrdf, lworkf, liworkf, aiparf(1), iparf, ioutf, ididf, itolf
+   real(c_double) rtolf, atolf, rparf, ftol, artolf(1), aatolf(1), arparf(1)
 
-   real(c_double), allocatable, target :: workf(:)
+   real(c_double), allocatable, target :: workf(:), yf(:)
+   integer(c_int), allocatable, target :: iworkf(:)
 
    private allocate_arrays, deallocate_arrays
 contains
-   subroutine DOPRP_init(nf)
+   subroutine DOPRF_init(nf, ftoll)
       implicit none
 
       integer(c_int), intent(in) :: nf
+      real(c_double), intent(in) :: ftoll
 
       neqf = nf
       nrdf = nf
       lworkf = 11*neqf + 8*nrdf + 21
       liworkf = nrdf + 21
-   end subroutine DOPRP_init
+      
+      ftol = ftoll
+      
+      call allocate_arrays()
+   end subroutine DOPRF_init
 
    subroutine allocate_arrays()
       implicit none
 
       integer(c_int) err_alloc
 
-      allocate (workf(lworkf), stat=err_alloc)
+      allocate (workf(lworkf), iworkf(liworkf), yf(neqf), stat=err_alloc)
 
       if (err_alloc /= 0) then
          print *, "allocation error"
@@ -38,7 +45,7 @@ contains
 
       integer(c_int) err_dealloc
 
-      deallocate (workf, stat=err_dealloc)
+      deallocate (workf, iworkf, yf, stat=err_dealloc)
 
       if (err_dealloc /= 0) then
          print *, "deallocation error"
