@@ -7,7 +7,7 @@ module D02PVF_D02PCF_D02PDF
 
    real(c_double), allocatable, target :: thres(:), workp(:), pgot(:), ppgot(:), pmax(:)
 
-   private allocate_arrays, deallocate_arrays
+   private allocate_arrays, deallocate_arrays, neqp
 
 contains
 

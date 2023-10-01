@@ -50,8 +50,10 @@
 		<Filter Name="Source Files" Filter="f90;for;f;fpp;ftn;def;odl;idl">
 		<File RelativePath=".\D02NVF_D02M_N.f90"/>
 		<File RelativePath=".\D02PVF_D02PCF_D02PDF.f90"/>
+		<File RelativePath=".\DOPRF.f90"/>
 		<File RelativePath=".\dopri5_f.f"/>
 		<File RelativePath=".\dopri5_p.f"/>
+		<File RelativePath=".\DOPRP.f90"/>
 		<File RelativePath=".\fun.f90"/>
 		<File RelativePath=".\main.f90"/></Filter></Files>
 	<Globals/></VisualStudioProject>

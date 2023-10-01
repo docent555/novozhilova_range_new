@@ -2,10 +2,10 @@ module fun
    use, intrinsic :: iso_c_binding
    use ifcore
    use ifport
-   use D02PVF_D02PCF_D02PDF
-   use D02NVF_D02M_N
+   !use D02PVF_D02PCF_D02PDF
+   !use D02NVF_D02M_N
 
-   integer(c_int) ne, nt, nz, freq_out, l, inharm, ndtr
+   integer(c_int) ne, neqp, neqf, nt, nz, freq_out, l, inharm, ndtr
    real(c_double) zex_w, zex, dz, tend, dtr(2), q(3), icu(2), th(2), a(2), dcir(2), r(2), &
       f0(6), dt, pitch, f10, f20, f30, p10, p20, p30, ftol, ptol, nharm, &
       gamma, ukv, betta, betta2, betta_z, betta_z2, betta_perp, betta_perp2, gmp, w_op_w, w_op, c, e, m, b(2), w_n(2), ia(2), norm, nfac, &
@@ -18,7 +18,7 @@ module fun
    real(c_double) phitmp0(3), phitmp1(3)
    complex(c_double_complex) fc, fcomp(3)
 
-   integer(c_int), allocatable, target :: idxre(:, :), idxim(:, :), iwork(:), idxp(:, :)
+   integer(c_int), allocatable, target :: idxre(:, :), idxim(:, :), idxp(:, :)
    complex(c_double_complex), allocatable, target :: u(:), mean(:)
    real(c_double), allocatable, target :: tax(:), zax(:), eta(:, :), etag(:, :), w(:, :), f(:, :), p(:, :), &
                                           phi(:, :), phios(:, :), wos(:, :), &
@@ -35,11 +35,17 @@ module fun
 
 contains
    subroutine init()
+      use D02PVF_D02PCF_D02PDF, only:D02PVF_D02PCF_D02PDF_init
+      use D02NVF_D02M_N, only:D02NVF_D02M_N_init
       implicit none
 
       integer(c_int) ii
 
       call read_param()
+      
+      neqp = 4*ne
+      neqf = 6
+      
       call svch_params()
 
       if (lensm .eq. .true.) zex_w = betta_perp2/2.0d0/betta_z*w_op_w*zex/nharm/c
@@ -119,6 +125,8 @@ contains
       end if
 
       dtr0 = dtrb(1)
+
+      w(:, :) = 0
 
    end subroutine init
 
@@ -615,7 +623,43 @@ contains
       stop
    end subroutine write_results
 
+   subroutine init_dopr_p()   
+      use DOPRP, only:rparp, iparp, itolp, rtolp, atolp, iworkp, workp, ptol, &
+         artolp, aatolp, arparp, aiparp
+      import, only:nz, dz
+      implicit none
+
+      rparp = 0.0
+      iparp = 0
+      itolp = 0
+      rtolp = ptol
+      atolp = rtolp
+      iworkp(:) = 0
+      workp(:) = 0.0d0
+
+      artolp(1) = rtolp
+      aatolp(1) = atolp
+      arparp(1) = rparp
+      aiparp(1) = iparp
+   end subroutine init_dopr_p
+
+   subroutine solvep_dopr(pin, pex, c)
+      use DOPRP, only:yp, iworkp
+
+      call init_dopr_p()
+
+      ioutp = 2
+      z = zax(1)
+      xoutp = z
+      itp = 0
+      yp = p(:, 1)
+      iworkp(5) = neqp
+
+   end subroutine solvep_dopr
+
    subroutine solvep_nag(pin, pex, c)
+      use D02PVF_D02PCF_D02PDF, only:zstart, thres, method, errass, hstart, workp, lenwrk, ifailp, pgot, ppgot, pmax
+   
       implicit none
 
       real(c_double), intent(in) :: pin(:)
@@ -649,6 +693,11 @@ contains
    end subroutine solvep_nag
 
    subroutine solvef_nag()
+      use D02NVF_D02M_N, only:rtol, neqmax, ny2dim, maxord, petzld, const, tcrit, hmin, hmax, h0, maxstp, mxhnil, nwkjac, rwork, ifailf, neq, &
+         t, tout, itask, itol, atol, y, itrace, xout, it, ydot, inform, ysave, wkjac, nwkjac, w_monitr
+      
+      implicit none
+   
       call d02nvf(neqmax, ny2dim, maxord, 'default', petzld, const, tcrit, hmin, hmax, &
                   h0, maxstp, mxhnil, 'default', rwork, ifailf)
       call d02nsf(neq, neqmax, 'a', nwkjac, rwork, ifailf)
@@ -773,7 +822,7 @@ contains
 
       integer(c_int) neqf, ires
       real(c_double) t, f(neqf), s(neqf)
-      
+
       fp(1) = f(1)*cdexp(ic*f(2))
       fp(2) = f(3)*cdexp(ic*f(4))
 
@@ -1028,6 +1077,7 @@ contains
    end
 
    subroutine monitr(n, nmax, t, hlast, h, y, ydot, ysave, r, acor, imon, inln, hmin, hmxi, nqu)
+      use D02NVF_D02M_N, only:w_monitr
       implicit none
       !..parameters..
       integer nout, it, j

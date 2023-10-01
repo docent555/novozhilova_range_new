@@ -14,7 +14,7 @@ module D02NVF_D02M_N
 
    common xout, it
 
-   private allocate_arrays, deallocate_arrays
+   private allocate_arrays, deallocate_arrays, neqf
 
 contains
 
