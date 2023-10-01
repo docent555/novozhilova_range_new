@@ -19,9 +19,9 @@ contains
       nrdf = nf
       lworkf = 11*neqf + 8*nrdf + 21
       liworkf = nrdf + 21
-      
+
       ftol = ftoll
-      
+
       call allocate_arrays()
    end subroutine DOPRF_init
 

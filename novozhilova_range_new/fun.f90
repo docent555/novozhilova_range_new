@@ -3,13 +3,13 @@ module fun
    use ifcore
    use ifport
 
-   integer(c_int) ne, neqp, neqf, nt, nz, freq_out, l, inharm, ndtr
+   integer(c_int) ne, neqp, neqf, nt, nz, freq_out, l, inharm, ndtr, METH
    real(c_double) zex_w, zex, dz, tend, dtr(2), q(3), icu(2), th(2), a(2), dcir(2), r(2), &
       f0(6), dt, pitch, f10, f20, f30, p10, p20, p30, ftol, ptol, nharm, &
       gamma, ukv, betta, betta2, betta_z, betta_z2, betta_perp, betta_perp2, gmp, w_op_w, w_op, c, e, m, b(2), w_n(2), ia(2), norm, nfac, &
       dtrb(2), dtrh_w, dtr0
    complex(c_double_complex) fp(2)
-   logical(c_bool) wc, fok, lensm, btod, iatoi, inher, DP5
+   logical(c_bool) wc, fok, lensm, btod, iatoi, inher, SQR
    character(len=6) path
 
    integer(c_int) breaknum(3)
@@ -25,6 +25,10 @@ module fun
    include 'z.inc'
    include 're.inc'
    include 'im.inc'
+
+   include 'za_22-09-23.inc'
+   include 'rea_22-09-23.inc'
+   include 'ima_22-09-23.inc'
 
    complex(c_double_complex), parameter :: ic = (0.0d0, 1.0d0)
    real(c_double), parameter :: pi = 2.0d0*dacos(0.0d0)
@@ -59,7 +63,11 @@ contains
          dtr(2) = (2.0/betta_perp2)*(1.0 - (2.0*w_n(2))/(gamma*w_op_w))
       end if
 
-      call norma(norm)
+      if (inharm .eq. 2) then
+         call norma(norm)
+      else
+         call norma22(norm)
+      end if
 
       if (iatoi .eq. .true.) then
          nfac = factorial(inharm)
@@ -74,10 +82,13 @@ contains
       nt = tend/dt + 1
       nz = zex_w/dz + 1
 
-      if (DP5 .eq. .true.) then
+      if (METH .eq. 1) then
+
          call DOPRP_init(ne, ptol)
          call DOPRF_init(ne, ftol)
-      else
+
+      else if (METH .eq. 2) then
+
          call D02PVF_D02PCF_D02PDF_init(ne)
 
          f0(1) = f10
@@ -88,6 +99,12 @@ contains
          f0(6) = p30
 
          call D02NVF_D02M_N_init(6, nt, dt, tend, ftol, f0)
+
+      else if (METH .eq. 3) then
+
+         !call D02PVF_D02PCF_D02PDF_init(ne)
+         call DOPRP_init(ne, ptol)
+
       end if
 
       call allocate_arrays()
@@ -239,6 +256,26 @@ contains
 
    end subroutine norma
 
+   subroutine norma22(norm)
+      use, intrinsic :: iso_c_binding, only: c_double, c_double_complex, c_int
+      import, only:rea22, ima22, betta_perp2, betta_z, inharm, c, w_op_w, za22!, omega
+      implicit none
+
+      real(c_double) dzz, norm
+      complex(c_double_complex) u(1123)
+      integer ns
+
+      ns = size(za22)
+      dzz = sum(za22(2:1123) - za22(1:1122))/(size(za22) - 1)*0.1
+      dzz = betta_perp2/2.0d0/betta_z*w_op_w*dzz/inharm/c
+      u = dcmplx(rea22, ima22)
+
+      norm = sum(cdabs(u(:))*cdabs(u(:)))*dzz
+
+      print *, 'N = ', norm
+
+   end subroutine norma22
+
    recursive function factorial(p) result(l)
       import, none
       implicit none
@@ -293,40 +330,131 @@ contains
 
    end function squval
 
-   !function uval(zz)
-   !
-   !   implicit none
-   !
-   !   real(c_double), intent(in) :: zz
-   !
-   !   complex(c_double_complex) uval
-   !   real(c_double) z, re, im, d
-   !   integer(c_int) l
-   !
-   !   z = zz/zex_w*185.5 - 8.5
-   !   l = (z + 8.5)/0.28021 + 1
-   !   d = z - za(l)
-   !
-   !   !print *, z, l, d
-   !
-   !   if (d .gt. 0.0 .and. l /= 663) then
-   !      re = (rea(l)*za(l + 1) - rea(l + 1)*za(l))/(za(l + 1) - za(l)) + &
-   !           (rea(l + 1) - rea(l))/(za(l + 1) - za(l))*z
-   !      im = (ima(l)*za(l + 1) - ima(l + 1)*za(l))/(za(l + 1) - za(l)) + &
-   !           (ima(l + 1) - ima(l))/(za(l + 1) - za(l))*z
-   !   else if (d .lt. 0.0 .and. l /= 1) then
-   !      re = (rea(l - 1)*za(l) - rea(l)*za(l - 1))/(za(l) - za(l - 1)) + &
-   !           (rea(l) - rea(l - 1))/(za(l) - za(l - 1))*z
-   !      im = (ima(l - 1)*za(l) - ima(l)*za(l - 1))/(za(l) - za(l - 1)) + &
-   !           (ima(l) - ima(l - 1))/(za(l) - za(l - 1))*z
-   !   else
-   !      re = rea(l)
-   !      im = ima(l)
-   !   end if
-   !
-   !   uval = dcmplx(re, im)
-   !
-   !end function uval
+   function uval(zz)
+
+      implicit none
+
+      real(c_double), intent(in) :: zz
+
+      complex(c_double_complex) uval
+      real(c_double) z, re, im, d
+      integer(c_int) l
+
+      z = zz/zex_w*185.5 - 8.5
+      l = (z + 8.5)/0.28021 + 1
+      d = z - za(l)
+
+      !print *, z, l, d
+
+      if (d .gt. 0.0 .and. l /= 663) then
+         re = (rea(l)*za(l + 1) - rea(l + 1)*za(l))/(za(l + 1) - za(l)) + &
+              (rea(l + 1) - rea(l))/(za(l + 1) - za(l))*z
+         im = (ima(l)*za(l + 1) - ima(l + 1)*za(l))/(za(l + 1) - za(l)) + &
+              (ima(l + 1) - ima(l))/(za(l + 1) - za(l))*z
+      else if (d .lt. 0.0 .and. l /= 1) then
+         re = (rea(l - 1)*za(l) - rea(l)*za(l - 1))/(za(l) - za(l - 1)) + &
+              (rea(l) - rea(l - 1))/(za(l) - za(l - 1))*z
+         im = (ima(l - 1)*za(l) - ima(l)*za(l - 1))/(za(l) - za(l - 1)) + &
+              (ima(l) - ima(l - 1))/(za(l) - za(l - 1))*z
+      else
+         re = rea(l)
+         im = ima(l)
+      end if
+
+      uval = dcmplx(re, im)
+
+   end function uval
+
+   function squval22(zz)
+      use, intrinsic :: iso_c_binding, only: c_double, c_double_complex, c_int
+      import, only:zex_w, za22, rea22, ima22
+      implicit none
+
+      real(c_double), intent(in) :: zz
+
+      complex(c_double_complex) squval22
+      real(c_double) z, re, im, dz, zl
+      integer(c_int) l, ns
+
+      z = zz/zex_w*52.43d0
+
+      l = 1
+      do while (za22(l) < z)
+         l = l + 1
+      end do
+
+      zl = za22(l)
+      if (l .eq. 1) then
+         l = 2
+         zl = za22(l)
+         dz = (za22(l + 1) - za22(l - 1))/2.0d0
+      elseif (l .ge. 1122) then
+         l = 1122
+         zl = za22(l)
+         dz = (za22(l + 1) - za22(l - 1))/2.0d0
+      else
+         if ((z - zl)/(za22(l + 1) - zl) .gt. 0.5) then
+            l = l + 1
+            zl = za22(l)
+         end if
+         dz = (za22(l + 1) - za22(l - 1))/2.0d0
+      end if
+
+      !z = z - 0.0d0
+
+      re = rea22(l - 1) + ((-rea22(l - 1) + rea22(l))*(dz + z - zl))/dz + ((rea22(l - 1)/2.0d0 - rea22(l) + &
+                                                                            rea22(l + 1)/2.0d0)*(z - zl)*(dz + z - zl))/dz/dz
+      im = ima22(l - 1) + ((-ima22(l - 1) + ima22(l))*(dz + z - zl))/dz + ((ima22(l - 1)/2.0d0 - ima22(l) + &
+                                                                            ima22(l + 1)/2.0d0)*(z - zl)*(dz + z - zl))/dz/dz
+      !!!NE RABOTAET
+      !re = ((rea22(l - 1) - 2*rea22(l) + rea22(l + 1))*z**2)/(2.*dz**2) &
+      !     + (z*(dz*(-rea22(l - 1) + rea22(l + 1)) - 2*(rea22(l - 1) - 2*rea22(l) + rea22(l + 1))*zl))/(2.*dz**2) + &
+      !     -(2*dz**2*rea22(l) + dz*(rea22(l - 1) - rea22(l + 1))*zl + (rea22(l - 1) - 2*rea22(l) + rea22(l + 1))*zl**2)/(2.*dz**2)
+      !im = ((ima22(l - 1) - 2*ima22(l) + ima22(l + 1))*z**2)/(2.*dz**2) + &
+      !     (z*(dz*(-ima22(l - 1) + ima22(l + 1)) - 2*(ima22(l - 1) - 2*ima22(l) + ima22(l + 1))*zl))/(2.*dz**2) + &
+      !     -(2*dz**2*ima22(l) + dz*(ima22(l - 1) - ima22(l + 1))*zl + (ima22(l - 1) - 2*ima22(l) + ima22(l + 1))*zl**2)/(2.*dz**2)
+
+      squval22 = dcmplx(re, im)
+   end function squval22
+
+   function uval22(zz)
+
+      implicit none
+
+      real(c_double), intent(in) :: zz
+
+      complex(c_double_complex) uval22
+      real(c_double) z, re, im, d
+      integer(c_int) l
+
+      z = zz/zex_w*52.43
+
+      l = 1
+      do while (za22(l) < z)
+         l = l + 1
+      end do
+      d = z - za22(l)
+
+      !print *, z, l, d
+
+      if (d .gt. 0.0 .and. l /= 1123) then
+         re = (rea22(l)*za22(l + 1) - rea22(l + 1)*za22(l))/(za22(l + 1) - za22(l)) + &
+              (rea22(l + 1) - rea22(l))/(za22(l + 1) - za22(l))*z
+         im = (ima22(l)*za22(l + 1) - ima22(l + 1)*za22(l))/(za22(l + 1) - za22(l)) + &
+              (ima22(l + 1) - ima22(l))/(za22(l + 1) - za22(l))*z
+      else if (d .lt. 0.0 .and. l /= 1) then
+         re = (rea22(l - 1)*za22(l) - rea22(l)*za22(l - 1))/(za22(l) - za22(l - 1)) + &
+              (rea22(l) - rea22(l - 1))/(za22(l) - za22(l - 1))*z
+         im = (ima22(l - 1)*za22(l) - ima22(l)*za22(l - 1))/(za22(l) - za22(l - 1)) + &
+              (ima22(l) - ima22(l - 1))/(za22(l) - za22(l - 1))*z
+      else
+         re = rea22(l)
+         im = ima22(l)
+      end if
+
+      uval22 = dcmplx(re, im)
+
+   end function uval22
 
    subroutine allocate_arrays()
       !use, intrinsic :: iso_c_binding
@@ -369,7 +497,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtr1, dtr2, gmp, DP5
+         dtr1, dtr2, gmp, METH, SQR
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtr1, dtr2
       character(*) path
@@ -413,7 +541,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtrb, dtrh, inher, gmp, DP5
+         dtrb, dtrh, inher, gmp, METH, SQR
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtrh
 
@@ -643,6 +771,7 @@ contains
       atolp = rtolp
       iworkp(:) = 0
       workp(:) = 0.0d0
+      workp(6) = dz
 
       artolp(1) = rtolp
       aatolp(1) = atolp
@@ -824,20 +953,24 @@ contains
       fp(2) = f(3, 1)*cdexp(ic*f(4, 1))
 
       !solve eq. at t=0
-      if (DP5 .eq. .true.) then
+      if (METH .eq. 1) then
          call solvep_dopr(p(:, 1), p, 'p')
-      else
+      elseif (METH .eq. 2) then
          call solvep_nag(p(:, 1), p, 'p')
+      elseif (METH .eq. 3) then
+         call solvep_rk(p(:, 1), p, 'p')
       end if
 
       eta(:, 1) = eff(p(:, nz))
       etag(:, 1) = pitch**2/(pitch**2 + 1.0d0)*eta(:, 1)
 
       !time solver
-      if (DP5 .eq. .true.) then
+      if (METH .eq. 1) then
          call solvef_dopr()
-      else
+      elseif (METH .eq. 2) then
          call solvef_nag()
+      elseif (METH .eq. 3) then
+         call solvef_rk()
       end if
    end subroutine ode4f
 
@@ -870,6 +1003,22 @@ contains
          u = dexp(-3*((z - zex_w/2)/(zex_w/2))**2)
       else
          u = squval(z)
+      end if
+
+      if (fok .eq. .false.) then
+         u = dexp(-3*((z - zex_w/2)/(zex_w/2))**2)
+      elseif (SQR .eq. .true.) then
+         if (inharm .eq. 1) then
+            u = squval22(z)
+         else if (inharm .eq. 2) then
+            u = squval(z)
+         end if
+      else
+         if (inharm .eq. 1) then
+            u = uval22(z)
+         else if (inharm .eq. 2) then
+            u = uval(z)
+         end if
       end if
 
       do i = 1, 2
@@ -1021,10 +1170,26 @@ contains
          do i = 1, nz
             u(i) = dexp(-3*((zax(i) - zex_w/2)/(zex_w/2))**2)
          end do
+      elseif (SQR .eq. .true.) then
+         if (inharm .eq. 1) then
+            do i = 1, nz
+               u(i) = squval22(zax(i))
+            end do
+         else if (inharm .eq. 2) then
+            do i = 1, nz
+               u(i) = squval(zax(i))
+            end do
+         end if
       else
-         do i = 1, nz
-            u(i) = squval(zax(i))
-         end do
+         if (inharm .eq. 1) then
+            do i = 1, nz
+               u(i) = uval22(zax(i))
+            end do
+         else if (inharm .eq. 2) then
+            do i = 1, nz
+               u(i) = uval(zax(i))
+            end do
+         end if
       end if
 
       !open(1, file = 'test.dat')
@@ -1279,10 +1444,14 @@ contains
       fp(1) = fpex(1)*cdexp(ic*fpex(2))
       fp(2) = fpex(3)*cdexp(ic*fpex(4))
 
-      if (DP5 .eq. .true.) then
+      if (METH .eq. 1) then
          call solvep_dopr(p(:, 1), pex, 'a')
-      else
+      elseif (METH .eq. 2) then
          call solvep_nag(p(:, 1), pex, 'a')
+      elseif (METH .eq. 3) then
+         !call solvep_rk(p(:, 1), pex, 'a')
+         !call solvep_nag(p(:, 1), pex, 'a')
+         call solvep_dopr(p(:, 1), pex, 'a')
       end if
 
       do i = 1, 2
@@ -1295,11 +1464,11 @@ contains
          p2ex_mean(i) = sum(cdabs(ptmp(:)*cdabs(ptmp(:))))/ne
       end do
 
-      lhs1 = 4*fpex(1)**2 - 8*r(1)*fpex(5)*fpex(1)*dcos(th(1) - fpex(6) + fpex(2))
+      lhs1 = 2.0*nharm*fpex(1)**2 - 4.0*nharm*r(1)*fpex(5)*fpex(1)*dcos(th(1) - fpex(6) + fpex(2))
       rhs1 = -icu(1)*(p2ex_mean(1) - p20_mean(1))
       c1 = lhs1 - rhs1
 
-      lhs2 = 4*fpex(3)**2 - 8*r(2)*fpex(5)*fpex(3)*dcos(th(2) - fpex(6) + fpex(4))
+      lhs2 = 2.0*nharm*fpex(3)**2 - 4.0*nharm*r(2)*fpex(5)*fpex(3)*dcos(th(2) - fpex(6) + fpex(4))
       rhs2 = -icu(2)*(p2ex_mean(2) - p20_mean(2))
       c2 = lhs2 - rhs2
 
@@ -1321,10 +1490,12 @@ contains
          fp(1) = f(1, ii)*exp(ic*f(2, ii))
          fp(2) = f(3, ii)*exp(ic*f(4, ii))
 
-         if (DP5 .eq. .true.) then
+         if (METH .eq. 1) then
             call solvep_dopr(p(:, 1), p, 'p')
-         else
+         elseif (METH .eq. 2) then
             call solvep_nag(p(:, 1), p, 'p')
+         elseif (METH .eq. 3) then
+            call solvep_rk(p(:, 1), p, 'p')
          end if
 
          !x1 = xi(p(1:2*ne, :), 1)
@@ -1486,66 +1657,164 @@ contains
       return
    end subroutine soloutf
 
-   !   subroutine zs(f, pex, c1, lhs1, rhs1, c2, lhs2, rhs2)
-!
-!      implicit none
-!
-!      real(8), intent(in) :: f(neqf)
-!      real(8), intent(inout) :: c1, lhs1, rhs1, c2, lhs2, rhs2, pex(neqp)
-!
-!      integer(4) j, i, idx(ne)
-!      real(c_double) :: zwant, zgot
-!      complex(c_double_complex) ptmp(2, ne), ptmp_old(2, ne)
-!
-!      fp(1) = f(1)*cdexp(ic*f(2))
-!      fp(2) = f(3)*cdexp(ic*f(4))
-!
-!      call d02pvf(neqp, zstart, p(:, 1), zex_w, ptol, thres, method, 'usual task', errass, hstart, workp, lenwrk, ifailp)
-!
-!      do i = 1, 2
-!         ptmp_old(i, :) = dcmplx(p(idxre(i, :), 1), p(idxim(i, :), 1))
-!      end do
-!
-!      do j = 1, nz - 1
-!         zwant = zax(j + 1)
-!         call d02pcf(dpdz, zwant, zgot, pgot, ppgot, pmax, workp, ifailp)
-!
-!         if (ifailp .ne. 0) then
-!            write (*, *)
-!            write (*, 99998) 'exit d02pcf with ifail = ', ifailp, '  and z = ', zgot
-!            pause
-!            stop
-!         end if
-!99998    format(1x, a, i2, a, d12.5)
-!
-!         p(:, j + 1) = pgot
-!
-!         do i = 1, 2
-!            idx = idxp(i, :)
-!            ptmp(i, :) = dcmplx(p(idxre(i, :), j + 1), p(idxim(i, :), j + 1))
-!            dp2dz(idxp(i, :), j) = (cdabs(ptmp(i, :))**2 - cdabs(ptmp_old(i, :))**2)/dz
-!            mean2(i, j) = sum(dp2dz(idx, j))/ne
-!            ptmp_old(i, :) = ptmp(i, :)
-!         end do
-!      end do
-!
-!      pex(:) = pgot
-!
-!      lhs1 = 4*f(1)**2 - 8*r(1)*f(5)*f(1)*dcos(th(1) - f(6) + f(2))
-!      rhs1 = -icu(1)*(0.5d0*(mean2(1, 1) + mean2(1, nz - 1)) + sum(mean2(1, 2:(nz - 2))))*dz
-!      c1 = lhs1 - rhs1
-!
-!      lhs2 = 4*f(3)**2 - 8*r(2)*f(5)*f(3)*dcos(th(2) - f(6) + f(4))
-!      rhs2 = -icu(2)*(0.5d0*(mean2(2, 1) + mean2(2, nz - 1)) + sum(mean2(2, 2:(nz - 2))))*dz
-!      c2 = lhs2 - rhs2
-!
-!      !open (1, file='test.dat')
-!      !do j = 1, nz - 1
-!      !   write (1, '(2f17.8)') zax(j), mean2(2, j)
-!      !end do
-!      !close (1)
-!      !stop
-!
-!   end subroutine zs
+   subroutine solvef_rk()
+      implicit none
+
+      !integer(c_int) nt, neq
+      real(c_double) h, t0, t
+
+      call ode4f_rk(dfdt_rk, f, neqf, nt, 0.0d0, dt)
+   end subroutine solvef_rk
+
+   function dfdt_rk(t, y) result(s)
+      use, intrinsic :: iso_c_binding
+      implicit none
+      real(c_double) t, y(:), s(size(y))
+
+      call dfdt_common(neqf, t, y, s)
+   end function dfdt_rk
+
+   subroutine ode4f_rk(dydt, y, neq, nt, t0, h)
+      import
+      implicit none
+
+      interface
+         function dydt(t, y) result(s)
+            use, intrinsic :: iso_c_binding
+            implicit none
+            real(c_double) t, y(:), s(size(y))
+         end function dydt
+      end interface
+
+      integer(c_int) nt, neq, i, j, itf
+      real(c_double) h, t0, t
+      real(c_double), intent(inout) :: y(:, :)
+      real(c_double) s1(size(y, 1)), s2(size(y, 1)), s3(size(y, 1)), s4(size(y, 1)), v(size(y, 1))
+      real(c_double) pex(neqp)
+      logical(4) pressed
+      character(1) key
+      integer(c_int), parameter :: esc = 27
+
+      !!solve eq. at t=0
+      !fp(1) = y(1, 1)*cdexp(ic*y(2, 1))
+      !fp(2) = y(3, 1)*cdexp(ic*y(4, 1))
+      !
+      !call ode4p(dpdz_common, p, ne, nz, 0.0d0, dz)
+      !
+      !eta(:, 1) = eff(p(:, nz))
+      !etag(:, 1) = pitch**2/(pitch**2 + 1)*eta(:, 1)
+
+      !open (1, file='test.dat')
+      !do j = 1, nz
+      !    write (1, '(5f17.8)') (j-1)*dz, p(14, j), p(ne+14, j), p(128, j), p(ne+128, j)
+      !end do
+      !close (1)
+      !stop
+
+      do i = 1, nt - 1
+         v = y(:, i)
+         t = t0 + (i - 1)*h
+         s1(:) = dydt(t, v)
+         s2(:) = dydt(t + h/2, v + h*s1(:)/2)
+         s3(:) = dydt(t + h/2, v + h*s2(:)/2)
+         s4(:) = dydt(t + h, v + h*s3(:))
+         y(:, i + 1) = v + h*(s1(:) + 2*s2(:) + 2*s3(:) + s4(:))/6
+
+         eta(:, i + 1) = eff(p(:, nz))
+         etag(:, i + 1) = pitch**2/(pitch**2 + 1)*eta(:, i + 1)
+
+         itf = i + 1
+         call calcpex(y(:, i + 1), pex, cl1(itf), lhs1(itf), rhs1(itf), cl2(itf), lhs2(itf), rhs2(itf))
+         eta(:, itf) = eff(pex)
+         !eta(:, itf) = eff(p(:, nz))
+         etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)         
+         w(1, itf) = (s1(2) + 2*s2(2) + 2*s3(2) + s4(2))/6
+         w(2, itf) = (s1(4) + 2*s2(4) + 2*s3(4) + s4(4))/6
+         w(3, itf) = (s1(6) + 2*s2(6) + 2*s3(6) + s4(6))/6
+
+            write (*, '(a,f12.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f5.3,a,f5.3,a,\,a)') 'Time = ', t + h, '   |F1| = ', abs(y(1, i + 1)), '   |F2| = ', abs(y(3, i + 1)), '   |F3| = ', abs(y(5, i + 1)), &
+            '   Eff1 = ', eta(1, i + 1), '   Eff2 = ', eta(2, i + 1), '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', dabs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
+
+         pressed = peekcharqq()
+         if (pressed) then
+            key = getcharqq()
+            if (ichar(key) .eq. esc) then
+               write (*, '(/,a)') 'Quit?'
+               key = getcharqq()
+               if (ichar(key) .eq. 121 .or. ichar(key) .eq. 89) then
+                  nt = i + 1
+                  return
+                  !open (1, file='F.dat')
+                  !do j = 1, i + 1
+                  !    write (1, '(4e17.8)') (j - 1)*h, abs(y(1, j)), abs(y(2, j)), abs(y(3, j))
+                  !end do
+                  !close (2)
+                  !open (2, file='E.dat')
+                  !do j = 1, i + 1
+                  !    write (2, '(5e17.8)') (j - 1)*h, eta(1, j), etag(1, j), eta(2, j), etag(2, j)
+                  !end do
+                  !close (2)
+                  !stop
+               end if
+            end if
+         end if
+      end do
+   end subroutine ode4f_rk
+
+   subroutine solvep_rk(pin, pex, c)
+      implicit none
+
+      real(c_double), intent(in) :: pin(:)
+      real(c_double), intent(inout) :: pex(:, :)
+      character(c_char), intent(in) :: c
+
+      pex(:, 1) = pin
+
+      if (c .eq. 'p') then
+      call ode4p_rk(dpdz_rk, pex, neqp, nz, 0.0d0, dz)
+      else
+         call ode4p_rk(dpdz_rk, p, neqp, nz, 0.0d0, dz)
+         pex(:,1) = p(:,nz)
+      endif
+   end subroutine solvep_rk
+
+   subroutine ode4p_rk(dydt, y, neq, nz, z0, h)!, params)
+      import
+      implicit none
+
+      interface
+         subroutine dydt(z, p, prhs)
+            use, intrinsic :: iso_c_binding
+            implicit none
+            real(c_double), intent(in) :: z, p(*)
+            real(c_double), intent(out) :: prhs(*)
+         end subroutine dydt
+      end interface
+
+      integer(c_int) nz, neq, i
+      real(c_double) h, z0, z
+      real(c_double), intent(inout) :: y(:, :)
+      real(c_double) s1(size(y, 1)), s2(size(y, 1)), s3(size(y, 1)), s4(size(y, 1)), v(size(y, 1))
+
+      do i = 1, nz - 1
+         v = y(:, i)
+         z = z0 + (i - 1)*h
+         call dydt(z, v, s1)
+         call dydt(z + h/2, v + h*s1(:)/2, s2)
+         call dydt(z + h/2, v + h*s2(:)/2, s3)
+         call dydt(z + h, v + h*s3(:), s4)
+         y(:, i + 1) = v + h*(s1(:) + 2*s2(:) + 2*s3(:) + s4(:))/6
+      end do
+   end subroutine ode4p_rk
+
+   subroutine dpdz_rk(z, p, prhs)
+      use, intrinsic :: iso_c_binding
+      implicit none
+      real(c_double), intent(in) :: z, p(*)
+      real(c_double), intent(out) :: prhs(*)
+
+      call dpdz_common(z, p, prhs)
+
+   end subroutine dpdz_rk
 
 end module fun

@@ -20,7 +20,7 @@ contains
       nrdp = 4*ne
       lworkp = 8*neqp + 5*nrdp + 21
       liworkp = nrdp + 21
-      
+
       ptol = ptoll
 
       call allocate_arrays()
