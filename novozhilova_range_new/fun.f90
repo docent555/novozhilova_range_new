@@ -80,7 +80,17 @@ contains
       print *, 'icu1 = ', icu(1), 'icu2 = ', icu(2)
 
       nt = tend/dt + 1
-      nz = zex_w/dz + 1
+      if (nz > 0) then
+         dz = zex_w/(nz - 1)
+         print *, 'nz > 0'
+         print *, 'nz = ', nz
+         print *, 'dz = ', dz
+      else
+         nz = zex_w/dz + 1
+         print *, 'nz == 0'
+         print *, 'nz = ', nz
+         print *, 'dz = ', dz
+      end if
 
       if (METH .eq. 1) then
 
@@ -162,12 +172,17 @@ contains
       betta2 = 1.0d0 - 1.0d0/(gamma*gamma)
       betta_z = betta/dsqrt(pitch*pitch + 1.0d0)
       betta_z2 = betta2/(pitch*pitch + 1.0d0)
-      betta_perp2 = betta2 - betta_z2
-      !gmp = 0.048715056967419
+      betta_perp2 = betta2 - betta_z2      
       w_op_w = 2*pi*w_op*1e9
       c = 29979245800.0d0
       e = 4.803e-10
       m = 9.1093837015e-28
+
+      if (inharm .eq. 1) then
+         gmp = 0.001120993533677
+      else
+         gmp = 0.048715056967419
+      end if
 
    end subroutine svch_params
 
@@ -203,7 +218,17 @@ contains
       !print *, 'icu1 = ', icu(1), 'icu2 = ', icu(2)
 
       nt = tend/dt + 1
-      nz = zex_w/dz + 1
+      if (nz > 0) then
+         dz = zex_w/(nz - 1)
+         print *, 'nz > 0'
+         print *, 'nz = ', nz
+         print *, 'dz = ', dz
+      else
+         nz = zex_w/dz + 1
+         print *, 'nz == 0'
+         print *, 'nz = ', nz
+         print *, 'dz = ', dz
+      end if
 
       f(1, 1) = f10
       f(2, 1) = p10
@@ -497,7 +522,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtr1, dtr2, gmp, METH, SQR
+         dtr1, dtr2, METH, SQR, nz
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtr1, dtr2
       character(*) path
@@ -541,7 +566,7 @@ contains
       namelist /param/ ne, tend, zex, q1, q2, q3, i1, i2, th1, th2, a1, a2, &
          dcir1, dcir2, r1, r2, f10, f20, f30, p10, p20, p30, dt, dz, pitch, ftol, ptol, wc, fok, inharm, ukv, &
          w_op, lensm, btod, b1, b2, iatoi, ia1, ia2, &
-         dtrb, dtrh, inher, gmp, METH, SQR
+         dtrb, dtrh, inher, METH, SQR, nz
 
       real(c_double) q1, q2, q3, i1, i2, th1, th2, a1, a2, dcir1, dcir2, r1, r2, b1, b2, ia1, ia2, dtrh
 
@@ -1000,13 +1025,7 @@ contains
       complex(c_double_complex) s(ne), ptmp(ne)
 
       if (fok .eq. .false.) then
-         u = dexp(-3*((z - zex_w/2)/(zex_w/2))**2)
-      else
-         u = squval(z)
-      end if
-
-      if (fok .eq. .false.) then
-         u = dexp(-3*((z - zex_w/2)/(zex_w/2))**2)
+         u = dexp(-3.0d0*((z - zex_w/2)/(zex_w/2))**2)
       elseif (SQR .eq. .true.) then
          if (inharm .eq. 1) then
             u = squval22(z)
@@ -1168,7 +1187,7 @@ contains
 
       if (fok .eq. .false.) then
          do i = 1, nz
-            u(i) = dexp(-3*((zax(i) - zex_w/2)/(zex_w/2))**2)
+            u(i) = dexp(-3.0d0*((zax(i) - zex_w/2)/(zex_w/2))**2)
          end do
       elseif (SQR .eq. .true.) then
          if (inharm .eq. 1) then
@@ -1192,11 +1211,15 @@ contains
          end if
       end if
 
-      !open(1, file = 'test.dat')
-      !do i = 1,nz
-      !   write(1, '(i,2f14.6)') i, dreal(u(i)), dimag(u(i))
-      !end do
-      !close(1)
+      open (1, file='struc.dat')
+      do i = 1, nz
+         if (inharm == 2) then
+            write (1, '(3f14.6)') zax(i)/zax(nz)*185.5 - 8.5, dreal(u(i)), dimag(u(i))
+         else
+            write (1, '(3f14.6)') zax(i)/zax(nz)*52.43, dreal(u(i)), dimag(u(i))
+         end if
+      end do
+      close (1)    
       !stop
 
    end subroutine
@@ -1718,7 +1741,7 @@ contains
          s2(:) = dydt(t + h/2, v + h*s1(:)/2)
          s3(:) = dydt(t + h/2, v + h*s2(:)/2)
          s4(:) = dydt(t + h, v + h*s3(:))
-         y(:, i + 1) = v + h*(s1(:) + 2*s2(:) + 2*s3(:) + s4(:))/6
+         y(:, i + 1) = v + h*(s1(:) + 2.0d0*s2(:) + 2.0d0*s3(:) + s4(:))/6.0d0
 
          eta(:, i + 1) = eff(p(:, nz))
          etag(:, i + 1) = pitch**2/(pitch**2 + 1)*eta(:, i + 1)
@@ -1727,13 +1750,16 @@ contains
          call calcpex(y(:, i + 1), pex, cl1(itf), lhs1(itf), rhs1(itf), cl2(itf), lhs2(itf), rhs2(itf))
          eta(:, itf) = eff(pex)
          !eta(:, itf) = eff(p(:, nz))
-         etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)         
-         w(1, itf) = (s1(2) + 2*s2(2) + 2*s3(2) + s4(2))/6
-         w(2, itf) = (s1(4) + 2*s2(4) + 2*s3(4) + s4(4))/6
-         w(3, itf) = (s1(6) + 2*s2(6) + 2*s3(6) + s4(6))/6
+         etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)
+         w(1, itf) = (s1(2) + 2.0d0*s2(2) + 2.0d0*s3(2) + s4(2))/6.0d0
+         w(2, itf) = (s1(4) + 2.0d0*s2(4) + 2.0d0*s3(4) + s4(4))/6.0d0
+         w(3, itf) = (s1(6) + 2.0d0*s2(6) + 2.0d0*s3(6) + s4(6))/6.0d0
 
-            write (*, '(a,f12.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f5.3,a,f5.3,a,\,a)') 'Time = ', t + h, '   |F1| = ', abs(y(1, i + 1)), '   |F2| = ', abs(y(3, i + 1)), '   |F3| = ', abs(y(5, i + 1)), &
-            '   Eff1 = ', eta(1, i + 1), '   Eff2 = ', eta(2, i + 1), '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', dabs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
+         !write (*, '(a,f12.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f10.7,a,f5.3,a,f5.3,a,\,a)') 'Time = ', t + h, '   |F1| = ', abs(y(1, i + 1)), '   |F2| = ', abs(y(3, i + 1)), '   |F3| = ', abs(y(5, i + 1)), &
+         !'   Eff1 = ', eta(1, i + 1), '   Eff2 = ', eta(2, i + 1), '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', dabs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
+         write (*, '(a,f8.3,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f9.5,a,f9.5,a,f9.5,a,f5.3,a,f5.3,a,\,a)') 't =', t + h, &
+            '  |f1| =', abs(y(1, i + 1)), '  |f2| =', abs(y(3, i + 1)), '  |f3| =', abs(y(5, i + 1)), '  e1 =', eta(1, i + 1), '  e2 =', eta(2, i + 1), &
+            '  w1 = ', w(1, itf), '  w2 = ', w(2, itf), '  w3 = ', w(3, itf), '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, '%  c2 = ', dabs(cl2(itf)/rhs2(itf)*100), '%', char(13)
 
          pressed = peekcharqq()
          if (pressed) then
@@ -1771,11 +1797,11 @@ contains
       pex(:, 1) = pin
 
       if (c .eq. 'p') then
-      call ode4p_rk(dpdz_rk, pex, neqp, nz, 0.0d0, dz)
+         call ode4p_rk(dpdz_rk, pex, neqp, nz, 0.0d0, dz)
       else
          call ode4p_rk(dpdz_rk, p, neqp, nz, 0.0d0, dz)
-         pex(:,1) = p(:,nz)
-      endif
+         pex(:, 1) = p(:, nz)
+      end if
    end subroutine solvep_rk
 
    subroutine ode4p_rk(dydt, y, neq, nz, z0, h)!, params)
