@@ -1639,7 +1639,8 @@ contains
          write (*, '(a,f8.3,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f9.5,a,f9.5,a,f9.5,a,f5.3,a,f5.3,a,\,a)') 't =', xoutf, &
             '  |F1| = ', abs(f(1, itf)), '  |F2| = ', abs(f(3, itf)), &
             '  |F3| = ', abs(f(5, itf)), '  Eff1 = ', eta(1, itf), '  Eff2 = ', eta(2, itf), &
-            '  ph1 = ', f(2, itf), '  ph2 = ', f(4, itf), '  ph3 = ', f(6, itf), &
+            '  w1 = ', 0, '  w2 = ', 0, '  w3 = ', 0, &
+            !'  ph1 = ', f(2, itf), '  ph2 = ', f(4, itf), '  ph3 = ', f(6, itf), &
             '  c1 = ', abs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', abs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
          xoutf = x + dt
       else
