@@ -172,7 +172,7 @@ contains
       betta2 = 1.0d0 - 1.0d0/(gamma*gamma)
       betta_z = betta/dsqrt(pitch*pitch + 1.0d0)
       betta_z2 = betta2/(pitch*pitch + 1.0d0)
-      betta_perp2 = betta2 - betta_z2      
+      betta_perp2 = betta2 - betta_z2
       w_op_w = 2*pi*w_op*1e9
       c = 29979245800.0d0
       e = 4.803e-10
@@ -1219,7 +1219,7 @@ contains
             write (1, '(3f14.6)') zax(i)/zax(nz)*52.43, dreal(u(i)), dimag(u(i))
          end if
       end do
-      close (1)    
+      close (1)
       !stop
 
    end subroutine
@@ -1620,7 +1620,7 @@ contains
       end interface
 
       integer(c_int) nr, n, nd, icomp(nd), iparf, irtrn, j, itf
-      real(c_double) xold, x, con(5*nd), rparf, y(neqf), xoutf, pex(neqp), yy(neqf)
+      real(c_double) xold, x, con(5*nd), rparf, y(neqf), xoutf, pex(neqp), yy(neqf), wcur(3)
       logical(4) pressed
       character(1) key
       integer(c_int), parameter :: esc = 27
@@ -1653,11 +1653,14 @@ contains
             eta(:, itf) = eff(pex)
             !eta(:, itf) = eff(p(:, nz))
             etag(:, itf) = pitch**2/(pitch**2 + 1)*eta(:, itf)
+            do j = 1, 3
+               wcur(j) = (f(2*j, itf) - f(2*j, itf - 1))/dt
+            end do
             !write (*, '(a,f10.5,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f10.6,a,f6.3,a,f6.3,\,a,a)') 'Time = ', xoutf, &
             write (*, '(a,f8.3,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f8.5,a,f9.5,a,f9.5,a,f9.5,a,f5.3,a,f5.3,a,\,a)') 't =', xoutf, &
                '  |F1| = ', abs(f(1, itf)), '  |F2| = ', abs(f(3, itf)), &
                '  |F3| = ', abs(f(5, itf)), '  Eff1 = ', eta(1, itf), '  Eff2 = ', eta(2, itf), &
-               '  ph1 = ', f(2, itf), '  ph2 = ', f(4, itf), '  ph3 = ', f(6, itf), &
+               '  w1 = ', wcur(1), '  w2 = ', wcur(2), '  w3 = ', wcur(3), &
                '  c1 = ', dabs(cl1(itf)/rhs1(itf))*100, ' %  c2 = ', dabs(cl2(itf)/rhs2(itf))*100, ' %', char(13)
             xoutf = xoutf + dt
             goto 10
