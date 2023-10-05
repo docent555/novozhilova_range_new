@@ -870,7 +870,7 @@ contains
          z = zax(1)
          xoutp = z
          itp = 0
-         yp(:) = pin(:)
+         yp = pin
          iworkp(5) = neqp
 
          call dopri5_p(neqp, dpdz_dopr, z, yp, zex_w, artolp, aatolp, itolp, soloutp, ioutp, &
@@ -883,7 +883,7 @@ contains
          z = zax(1)
          xoutp = z
          itp = 0
-         yp(:) = pin(:)
+         yp = pin
          iworkp(5) = 0
 
          call dopri5_p(neqp, dpdz_dopr, z, yp, zex_w, artolp, aatolp, itolp, solout_fiction, 0, &
@@ -905,8 +905,8 @@ contains
 
       integer(c_int) i
       real(c_double) :: zwant, zgot
-
-      call d02pvf(neqp, zstart, pin(:), zex_w, ptol, thres, method, 'usual task', errass, hstart, workp, lenwrk, ifailp)
+      !solve eq. at t=0
+      call d02pvf(neqp, zstart, p(:, 1), zex_w, ptol, thres, method, 'usual task', errass, hstart, workp, lenwrk, ifailp)
 
       if (c .eq. 'p') then
          do i = 1, nz - 1
@@ -985,17 +985,6 @@ contains
       elseif (METH .eq. 3) then
          call solvep_rk(p(:, 1), p, 'p')
       end if
-
-      !open (1, file='test.dat')
-      !do i = 1, nz
-      !   write (1, '(f14.6,a,\)') zax(i), ' '
-      !   do j = 1, ne
-      !      write (1, '(f14.6,a,\)') cdabs(dcmplx(p(j, i), p(ne + j, i))), ' '
-      !   end do
-      !   write (1, '(/\)')
-      !end do
-      !close (1)
-      !stop
 
       eta(:, 1) = eff(p(:, nz))
       etag(:, 1) = pitch**2/(pitch**2 + 1.0d0)*eta(:, 1)
@@ -1108,19 +1097,6 @@ contains
 
       fp(1) = f(1)*cdexp(ic*f(2))
       fp(2) = f(3)*cdexp(ic*f(4))
-      
-      !if (t == 0.5) then
-      !   open (1, file='test.dat')
-      !   do i = 1, nz
-      !      write (1, '(f14.6,a,\)') zax(i), ' '
-      !      do j = 1, ne
-      !         write (1, '(f14.6,a,\)') cdabs(dcmplx(p(j, i), p(ne + j, i))), ' '
-      !      end do
-      !      write (1, '(/\)')
-      !   end do
-      !   close (1)
-      !   stop
-      !end if
 
       call solvep_nag(p(:, 1), p, 'p')
 
@@ -1137,19 +1113,6 @@ contains
       fp(2) = f(3)*cdexp(ic*f(4))
 
       call solvep_dopr(p(:, 1), p, 'p')
-
-      !if (t == 0.5) then
-      !   open (1, file='test.dat')
-      !   do i = 1, nz
-      !      write (1, '(f14.6,a,\)') zax(i), ' '
-      !      do j = 1, ne
-      !         write (1, '(f14.6,a,\)') cdabs(dcmplx(p(j, i), p(ne + j, i))), ' '
-      !      end do
-      !      write (1, '(/\)')
-      !   end do
-      !   close (1)
-      !   stop
-      !end if
 
       call dfdt_common(neqf, t, f, s)
 
